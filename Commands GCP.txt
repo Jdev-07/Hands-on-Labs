@@ -1,0 +1,54 @@
+/// setting up the environment
+gcloud auth list
+gcloud config project list
+
+/// gemini in cloud shell IDE
+gcloud services enable cloudaicompanion.googleapis.com
+
+/// setting up default region and zones
+gcloud config set compute/region Region
+gcloud config set compute/zone Zone
+
+/// creating compute instances 
+gcloud compute instances create www2 \
+    --zone=Zone \
+    --tags=network-lb-tag \
+    --machine-type=e2-small \
+    --image-family=debian-11 \
+    --image-project=debian-cloud \
+    --metadata=startup-script='#!/bin/bash
+      apt-get update
+      apt-get install apache2 -y
+      service apache2 restart
+      echo "
+<h3>Web Server: www2</h3>" | tee /var/www/html/index.html'
+
+/// creating firewall rules
+gcloud compute firewall-rules create www-firewall-network-lb \
+    --target-tags network-lb-tag --allow tcp:80
+
+// listing compute instances
+gcloud compute instances list
+
+// Creating an external IP address for LB
+
+gcloud compute addresses create network-lb-ip-1 \
+  --region Region
+  
+// creating pool and adding the instances
+gcloud compute target-pools create www-pool \
+  --region Region --http-health-check basic-check
+  
+// creating forwarding rules
+gcloud compute forwarding-rules create www-rule \
+    --region  Region \
+    --ports 80 \
+    --address network-lb-ip-1 \
+    --target-pool www-pool
+	
+// send traffic
+IPADDRESS=$(gcloud compute forwarding-rules describe www-rule --region Region --format="json" | jq -r .IPAddress)
+
+// testing traffic is being distributed
+
+while true; do curl -m1 $IPADDRESS; done
